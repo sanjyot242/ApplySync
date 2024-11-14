@@ -1,11 +1,11 @@
 from celery import Celery
 from email_service import process_emails
-
+from dotenv import load_dotenv
 # Configure Celery to use Redis as the broker and backend
 app = Celery(
     'job_tracker',
-    broker='redis://localhost:6379/0',
-    backend='redis://localhost:6379/1'
+    broker='amqp://guest:guest@localhost:5672//',    # RabbitMQ as broker
+    backend='rpc://'                                 # RabbitMQ as result backend
 )
 
 @app.on_after_configure.connect
@@ -16,4 +16,7 @@ def setup_periodic_tasks(sender, **kwargs):
 @app.task
 def check_for_new_emails():
     # Task to process job application emails
+    print("Working")
     process_emails()
+
+# check_for_new_emails.delay()

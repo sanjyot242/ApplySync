@@ -15,7 +15,7 @@ SCOPES = [
 def authenticate_user():
     # Initialize the OAuth flow
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-    creds = flow.run_local_server(port=5000)  # Starts local server for authentication
+    creds = flow.run_local_server(port=5001)  # Starts local server for authentication
     print("Authenticated Successfully")
     return creds
 
