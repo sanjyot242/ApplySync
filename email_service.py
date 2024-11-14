@@ -5,6 +5,8 @@ from googleapiclient.discovery import build
 import spacy
 from spreadsheet_service import add_job_to_sheet
 import time
+from datetime import datetime
+from openai import OpenAI
 
 
 from dotenv import load_dotenv
@@ -12,9 +14,13 @@ import os
 
 load_dotenv()
 
+
+
 CLIENT_SECRET_FILE = os.getenv('OAUTH_CLIENT_SECRET_FILE')
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/spreadsheets' , 'https://www.googleapis.com/auth/drive']
+OPENAIKEY = os.getenv('OPENAIKEY')
 nlp = spacy.load("en_core_web_sm")
+client = OpenAI(api_key=OPENAIKEY)
 
 def authenticate_user():
     creds = None
@@ -92,7 +98,14 @@ def fetch_job_details(service):
         msg_data = service.users().messages().get(userId='me',id=msg['id']).execute()
         email_subject = msg_data['payload']['headers'][0]['value']
         email_body = msg_data['snippet']
-        job_emails.append(email_body)
+        email_data = {
+            'body': email_body,
+            'internalDate': msg_data.get('internalDate')
+        }
+        
+        # job_info = extract_job_info(email_data)
+        job_emails.append(email_data)
+        # job_emails.append(email_body)
         # if 'Thank you for your interest' in email_subject.lower() or 'interview' in email_body.lower():
             
     update_last_run_time()
@@ -132,21 +145,63 @@ def classify_email_status(email_body):
     # If none of the conditions matched, return "Unknown"
     else:
         return "Unknown"
+        
 
 
-def extract_job_info(email_body):
-    doc = nlp(email_body)
+def extract_job_info(email_data):
+    doc = nlp(email_data['body'])
     job_info = {}
 
     for ent in doc.ents:
         if ent.label_ == "ORG":
             job_info['company'] = ent.text
-        elif ent.label_ == "DATE":
-            job_info['date_applied'] = ent.text
+    
+    if 'internalDate' in email_data:
+        timestamp = int(email_data['internalDate']) / 1000  # Convert milliseconds to seconds
+        job_info['date_applied'] = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        job_info['date_applied'] = 'Unknown'
 
-    job_info['status'] = classify_email_status(email_body)
+    job_info['status'] = classify_email_status(email_data['body'])
 
     return job_info
+
+'''def classify_and_extract_openai(email_data):
+    email_body = email_data['body']
+    
+    # Convert internalDate to a readable format if provided
+    if email_data.get('internalDate'):
+        date_received = datetime.fromtimestamp(int(email_data['internalDate']) / 1000).strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        date_received = "Unknown"
+    
+    # Define the messages for classification and entity extraction
+    messages = [
+        {"role": "system", "content": (
+            "You are an assistant that extracts information from job application emails. "
+            "Extract the following information as JSON with these fields: "
+            "\"Organization\", \"Date applied\", \"Status\", \"Position\", and \"URLs\"."
+        )},
+        {"role": "user", "content": (
+            f"Analyze the following email and extract:\n\n"
+            f"Email received date: {date_received}\n\n"
+            f"Email body:\n{email_body}\n\n"
+            f"Provide the extracted information in JSON format with fields: "
+            f"\"Organization\", \"Date applied\", \"Status\", \"Position\", and \"URLs\"."
+        )}
+    ]
+
+    # Call the OpenAI API with the new chat completion method
+    completion = client.chat.completions.create(
+        model="gpt-3.5-turbo",  # Use "gpt-4" if available; otherwise, use "gpt-3.5-turbo" or another model
+        messages=messages,
+        max_tokens=200,
+        temperature=0
+    )
+
+    # Extract and return the JSON result from the model's response
+    result = completion.choices[0].message['content'].strip()
+    return result'''
 
 
 def process_emails():
@@ -155,8 +210,8 @@ def process_emails():
     job_emails = fetch_job_details(service)
 
 
-    for email_body in job_emails:
-       job_info =  extract_job_info(email_body)
+    for email_data in job_emails:
+       job_info =  extract_job_info(email_data)
        add_job_to_sheet(job_info)
 
 
