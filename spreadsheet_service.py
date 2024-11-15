@@ -35,6 +35,13 @@ def authenticate_user():
 
 
 def add_job_to_sheet(job_data):
+    # row = [
+    #     job_data.get("Organization", "") or "",  # Convert None to ""
+    #     job_data.get("Date applied", "") or "",  # Convert None to ""
+    #     job_data.get("Position", "") or "",      # Convert None to ""
+    #     job_data.get("Status", "") or "",        # Convert None to ""
+    #     ", ".join(job_data.get("URLs", []))      # Join URLs list or use empty string if no URLs
+    # ]
     print(job_data)
     creds = authenticate_user()  # Authenticate user via OAuth
     client = gspread.authorize(creds)

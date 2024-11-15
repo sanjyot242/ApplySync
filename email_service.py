@@ -7,6 +7,7 @@ from spreadsheet_service import add_job_to_sheet
 import time
 from datetime import datetime
 from openai import OpenAI
+from spacy.pipeline import EntityRuler
 
 
 from dotenv import load_dotenv
@@ -21,6 +22,31 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googlea
 OPENAIKEY = os.getenv('OPENAIKEY')
 nlp = spacy.load("en_core_web_sm")
 client = OpenAI(api_key=OPENAIKEY)
+
+ruler = nlp.add_pipe("entity_ruler", before="ner")
+patterns = [
+    # Broaden organization pattern to capture variations like "Thank you for applying to [ORG]"
+    {"label": "ORG", "pattern": [{"LOWER": "thank"}, {"LOWER": "you"}, {"LOWER": "for"}, {"LOWER": "applying"}, {"LOWER": "to"}, {"IS_ALPHA": True, "OP": "+"}]},
+    
+    # Job position pattern variations
+    {"label": "POSITION", "pattern": [{"LOWER": "position"}, {"LOWER": "at"}, {"IS_ALPHA": True, "OP": "+"}]},
+    {"label": "POSITION", "pattern": [{"LOWER": "role"}, {"LOWER": "at"}, {"IS_ALPHA": True, "OP": "+"}]},
+    {"label": "POSITION", "pattern": [{"LOWER": "for"}, {"LOWER": "the"}, {"IS_ALPHA": True, "OP": "+"}]},
+    
+    # Status patterns with broader matching terms
+    {"label": "STATUS", "pattern": [{"LOWER": "unfortunately"}], "id": "Rejected"},
+    {"label": "STATUS", "pattern": [{"LOWER": "interview"}, {"LOWER": "scheduled"}], "id": "Interview Scheduled"},
+    {"label": "STATUS", "pattern": [{"LOWER": "offer"}, {"LOWER": "received"}], "id": "Offer Received"},
+    {"label": "STATUS", "pattern": [{"LOWER": "thank"}, {"LOWER": "you"}, {"LOWER": "for"}, {"LOWER": "applying"}], "id": "Applied"}
+]
+
+
+# Initialize the EntityRuler and add patterns
+ruler.add_patterns(patterns)
+
+
+
+
 
 def authenticate_user():
     creds = None
@@ -150,21 +176,42 @@ def classify_email_status(email_body):
 
 def extract_job_info(email_data):
     doc = nlp(email_data['body'])
-    job_info = {}
+    job_info = {
+        "Organization": "Unknown",
+        "Date applied": "Unknown",
+        "Position": "Unknown",
+        "Status": "Unknown",
+        # "URLs": []
+    }
 
     for ent in doc.ents:
         if ent.label_ == "ORG":
-            job_info['company'] = ent.text
-    
-    if 'internalDate' in email_data:
-        timestamp = int(email_data['internalDate']) / 1000  # Convert milliseconds to seconds
-        job_info['date_applied'] = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-    else:
-        job_info['date_applied'] = 'Unknown'
+            job_info["Organization"] = ent.text
+        elif ent.label_ == "DATE":
+            job_info["Date applied"] = ent.text
+        elif ent.label_ == "POSITION":
+            job_info["Position"] = ent.text
+        elif ent.label_ == "STATUS":
+            job_info["Status"] = ent.ent_id_  # Use the ID assigned in the pattern
 
-    job_info['status'] = classify_email_status(email_data['body'])
+    # Find URLs using regex
+    # job_info["URLs"] = [token.text for token in doc if token.like_url]
 
     return job_info
+
+    # for ent in doc.ents:
+    #     if ent.label_ == "ORG":
+    #         job_info['company'] = ent.text
+    
+    # if 'internalDate' in email_data:
+    #     timestamp = int(email_data['internalDate']) / 1000  # Convert milliseconds to seconds
+    #     job_info['date_applied'] = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+    # else:
+    #     job_info['date_applied'] = 'Unknown'
+
+    # job_info['status'] = classify_email_status(email_data['body'])
+
+    # return job_info
 
 '''def classify_and_extract_openai(email_data):
     email_body = email_data['body']
