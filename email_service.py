@@ -9,9 +9,11 @@ from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
+import json
+
 load_dotenv()
 client = OpenAI(
-    apiKey = os.getenv("OPENAI_KEY")
+    api_key = os.getenv("OPENAI_KEY")
 )
 
 
@@ -181,7 +183,10 @@ def classify_and_extract_email_informartion(email_data):
         {"role": "system", "content": (
             "You are an assistant that extracts information from job application emails. "
             "Extract the following information as JSON with these fields: "
-            "\"Organization\", \"Date applied\", \"Status\", \"Position\", and \"URLs\"."
+            "\"Organization\", \"Date applied\", \"Status\", \"Position\", and \"URLs\". "
+            "The `Status` must only be one of the following values: \"Applied\", \"Under Review\", "
+            "\"Online Assessment\", \"Interview\", or \"Rejected\". If the email does not explicitly "
+            "state the status, infer it based on the email's content."
         )},
         {"role": "user", "content": (
             f"Analyze the following email and extract:\n\n"
@@ -192,6 +197,7 @@ def classify_and_extract_email_informartion(email_data):
         )}
     ]
 
+
     # Call the OpenAI API with the new chat completion method
     completion = client.chat.completions.create(
         model="gpt-3.5-turbo",  # Use "gpt-4" if available; otherwise, use "gpt-3.5-turbo" or another model
@@ -199,7 +205,7 @@ def classify_and_extract_email_informartion(email_data):
     )
 
     # Extract and return the JSON result from the model's response
-    result = completion.choices[0].message['content'].strip()
+    result = json.loads(completion.choices[0].message.content or "{}")
     print(result)
     return result
 

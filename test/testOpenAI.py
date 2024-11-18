@@ -2,6 +2,8 @@ import time
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
+
+import json 
 import os
 load_dotenv()
 
@@ -42,7 +44,10 @@ def classify_and_extract_email_informartion(email_data):
         {"role": "system", "content": (
             "You are an assistant that extracts information from job application emails. "
             "Extract the following information as JSON with these fields: "
-            "\"Organization\", \"Date applied\", \"Status\", \"Position\", and \"URLs\"."
+            "\"Organization\", \"Date applied\", \"Status\", \"Position\", and \"URLs\". "
+            "The `Status` must only be one of the following values: \"Applied\", \"Under Review\", "
+            "\"Online Assessment\", \"Interview\", or \"Rejected\". If the email does not explicitly "
+            "state the status, infer it based on the email's content."
         )},
         {"role": "user", "content": (
             f"Analyze the following email and extract:\n\n"
@@ -60,7 +65,7 @@ def classify_and_extract_email_informartion(email_data):
     )
 
     # Extract and return the JSON result from the model's response
-    result = completion.choices[0].message.content
+    result = json.loads(completion.choices[0].message.content or "{}")
     print(result)
     return result
 

@@ -1,5 +1,6 @@
 import gspread
 from google_auth_oauthlib.flow import InstalledAppFlow
+from gspread.exceptions import SpreadsheetNotFound, APIError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
@@ -35,32 +36,52 @@ def authenticate_user():
 
 
 def add_job_to_sheet(job_data):
-    # row = [
-    #     job_data.get("Organization", "") or "",  # Convert None to ""
-    #     job_data.get("Date applied", "") or "",  # Convert None to ""
-    #     job_data.get("Position", "") or "",      # Convert None to ""
-    #     job_data.get("Status", "") or "",        # Convert None to ""
-    #     ", ".join(job_data.get("URLs", []))      # Join URLs list or use empty string if no URLs
-    # ]
-    print(job_data)
-    creds = authenticate_user()  # Authenticate user via OAuth
-    client = gspread.authorize(creds)
-    spreadsheet_name = 'Job Test'
+    """
+    Adds job application data to a Google Sheet.
+
+    Args:
+        job_data (dict): Dictionary containing job application details.
+    """
+    print("Job Data to Add:", job_data)
+    
+    # Authenticate user via OAuth
+    try:
+        creds = authenticate_user()  # Replace with your OAuth logic
+        client = gspread.authorize(creds)
+    except Exception as e:
+        print(f"Error during authentication: {e}")
+        return
+
+    # Define the spreadsheet name
+    spreadsheet_name = 'Job Application Staus'
+
+    # Attempt to open or create the spreadsheet
     try:
         spreadsheet = client.open(spreadsheet_name)
         sheet = spreadsheet.sheet1
         print("Opened existing sheet.")
-    except gspread.SpreadsheetNotFound:
+    except SpreadsheetNotFound:
+        print(f"Spreadsheet '{spreadsheet_name}' not found. Creating a new one...")
         spreadsheet = client.create(spreadsheet_name)
         sheet = spreadsheet.sheet1
-        print("Created new sheet.")
 
-        # Set up headers for the new sheet if it was just created
-        headers = list(job_data.keys())
+        # Add headers to the new sheet
+        headers = ["Organization", "Date applied", "Status", "Position", "URLs"]
         sheet.append_row(headers)
         print("Added headers to new sheet.")
 
-    # Append job_data values as a row in the sheet
-    row = [job_data.get(key, 'N/A') for key in job_data.keys()]
-    sheet.append_row(row)
-    print("Data added to the sheet.")
+    # Prepare data for appending
+    row = [
+        job_data.get("Organization", "N/A"),
+        job_data.get("Date applied", "N/A"),
+        job_data.get("Status", "N/A"),
+        job_data.get("Position", "N/A"),
+        ", ".join(job_data.get("URLs", [])) if isinstance(job_data.get("URLs", []), list) else "N/A"
+    ]
+
+    # Append data to the sheet
+    try:
+        sheet.append_row(row)
+        print("Data added to the sheet.")
+    except APIError as e:
+        print(f"Error while adding data to the sheet: {e}")
