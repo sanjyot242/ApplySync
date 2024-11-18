@@ -2,47 +2,29 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-import spacy
+
 from spreadsheet_service import add_job_to_sheet
 import time
 from datetime import datetime
 from openai import OpenAI
-from spacy.pipeline import EntityRuler
-
-
 from dotenv import load_dotenv
 import os
-
 load_dotenv()
+client = OpenAI(
+    apiKey = os.getenv("OPENAI_KEY")
+)
+
+
+
+
+
+
 
 
 
 CLIENT_SECRET_FILE = os.getenv('OAUTH_CLIENT_SECRET_FILE')
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/spreadsheets' , 'https://www.googleapis.com/auth/drive']
-OPENAIKEY = os.getenv('OPENAIKEY')
-nlp = spacy.load("en_core_web_sm")
-client = OpenAI(api_key=OPENAIKEY)
 
-ruler = nlp.add_pipe("entity_ruler", before="ner")
-patterns = [
-    # Broaden organization pattern to capture variations like "Thank you for applying to [ORG]"
-    {"label": "ORG", "pattern": [{"LOWER": "thank"}, {"LOWER": "you"}, {"LOWER": "for"}, {"LOWER": "applying"}, {"LOWER": "to"}, {"IS_ALPHA": True, "OP": "+"}]},
-    
-    # Job position pattern variations
-    {"label": "POSITION", "pattern": [{"LOWER": "position"}, {"LOWER": "at"}, {"IS_ALPHA": True, "OP": "+"}]},
-    {"label": "POSITION", "pattern": [{"LOWER": "role"}, {"LOWER": "at"}, {"IS_ALPHA": True, "OP": "+"}]},
-    {"label": "POSITION", "pattern": [{"LOWER": "for"}, {"LOWER": "the"}, {"IS_ALPHA": True, "OP": "+"}]},
-    
-    # Status patterns with broader matching terms
-    {"label": "STATUS", "pattern": [{"LOWER": "unfortunately"}], "id": "Rejected"},
-    {"label": "STATUS", "pattern": [{"LOWER": "interview"}, {"LOWER": "scheduled"}], "id": "Interview Scheduled"},
-    {"label": "STATUS", "pattern": [{"LOWER": "offer"}, {"LOWER": "received"}], "id": "Offer Received"},
-    {"label": "STATUS", "pattern": [{"LOWER": "thank"}, {"LOWER": "you"}, {"LOWER": "for"}, {"LOWER": "applying"}], "id": "Applied"}
-]
-
-
-# Initialize the EntityRuler and add patterns
-ruler.add_patterns(patterns)
 
 
 
@@ -72,23 +54,7 @@ def authenticate_user():
     return service
 
 
-# def get_start_date():
-#     # Define the file path for storing the start date
-#     start_date_file = 'start_date.txt'
-    
-#     # Check if start_date.txt already exists
-#     if os.path.exists(start_date_file):
-#         # Read the stored start date from the file
-#         with open(start_date_file, 'r') as file:
-#             start_date = int(file.read().strip())
-#     else:
-#         # If it doesn't exist, set start_date to the current timestamp
-#         start_date = int(time.time())
-#         # Save this start date to start_date.txt for future runs
-#         with open(start_date_file, 'w') as file:
-#             file.write(str(start_date))
-    
-#     return start_date
+
 
 def get_last_run_time():
     # Define the file path for storing the last run time
@@ -139,81 +105,69 @@ def fetch_job_details(service):
 
 
 
-def classify_email_status(email_body):
-    # Convert the email body to lowercase for case-insensitive matching
-    email_body = email_body.lower()
+# def classify_email_status(email_body):
+#     # Convert the email body to lowercase for case-insensitive matching
+#     email_body = email_body.lower()
     
-    # Check for "Online Assessment (OA)"
-    if "online assessment" in email_body or "hackerank" in email_body or "take part in our assessment" in email_body:
-        return "Online Assessment (OA)"
+#     # Check for "Online Assessment (OA)"
+#     if "online assessment" in email_body or "hackerank" in email_body or "take part in our assessment" in email_body:
+#         return "Online Assessment (OA)"
     
-    # Check for "Rejected"
-    elif ("unfortunately" in email_body and "won’t be moving it forward" in email_body) or \
-         ("we appreciate" in email_body and "at this time" in email_body and "not moving forward" in email_body) or \
-         ("not moving forward" in email_body) or \
-         ("not selected" in email_body) or \
-         ("another opportunity arises" in email_body):
-        return "Rejected"
+#     # Check for "Rejected"
+#     elif ("unfortunately" in email_body and "won’t be moving it forward" in email_body) or \
+#          ("we appreciate" in email_body and "at this time" in email_body and "not moving forward" in email_body) or \
+#          ("not moving forward" in email_body) or \
+#          ("not selected" in email_body) or \
+#          ("pursue other candidates" in email_body) or \
+#          ("another opportunity arises" in email_body):
+#         return "Rejected"
     
-    # Check for "Applied"
-    elif "thank you for applying" in email_body or \
-         "we have received your application" in email_body or \
-         "thank you for your interest" in email_body or \
-         "our hiring team is reviewing" in email_body or \
-         "if your application seems like a good fit" in email_body or \
-         "we will contact you soon" in email_body:
-        return "Applied"
+#     # Check for "Applied"
+#     elif "thank you for applying" in email_body or \
+#          "we have received your application" in email_body or \
+#          "thank you for your interest" in email_body or \
+#          "our hiring team is reviewing" in email_body or \
+#          "if your application seems like a good fit" in email_body or \
+#          "is currently reviewing"  in email_body or \
+#          "currently reviewing" in email_body or \
+#          "we will contact you soon" in email_body:
+#         return "Applied"
     
-    # Check for "Offer Received"
-    elif "offer" in email_body and ("congratulations" in email_body or "pleased to offer" in email_body):
-        return "Offer Received"
+#     # Check for "Offer Received"
+#     elif "offer" in email_body and ("congratulations" in email_body or "pleased to offer" in email_body):
+#         return "Offer Received"
     
-    # If none of the conditions matched, return "Unknown"
-    else:
-        return "Unknown"
+#     # If none of the conditions matched, return "Unknown"
+#     else:
+#         return "Unknown"
         
 
 
-def extract_job_info(email_data):
-    doc = nlp(email_data['body'])
-    job_info = {
-        "Organization": "Unknown",
-        "Date applied": "Unknown",
-        "Position": "Unknown",
-        "Status": "Unknown",
-        # "URLs": []
-    }
-
-    for ent in doc.ents:
-        if ent.label_ == "ORG":
-            job_info["Organization"] = ent.text
-        elif ent.label_ == "DATE":
-            job_info["Date applied"] = ent.text
-        elif ent.label_ == "POSITION":
-            job_info["Position"] = ent.text
-        elif ent.label_ == "STATUS":
-            job_info["Status"] = ent.ent_id_  # Use the ID assigned in the pattern
-
-    # Find URLs using regex
-    # job_info["URLs"] = [token.text for token in doc if token.like_url]
-
-    return job_info
-
-    # for ent in doc.ents:
-    #     if ent.label_ == "ORG":
-    #         job_info['company'] = ent.text
+# def extract_job_info(email_data):
+#     job_info = {
+#         "Organization": "Unknown",
+#         "Date applied": "Unknown",
+#         "Status": "Unknown",
+#     }
+#     ner_results = pipe(email_data['body'])
+#     organizations = [result['word'] for result in ner_results if result['entity'] == 'B-ORG']
+#     print(email_data['body'])
+#     print("Organization", organizations)
+#     organization = organizations[0] if organizations else ''
     
-    # if 'internalDate' in email_data:
-    #     timestamp = int(email_data['internalDate']) / 1000  # Convert milliseconds to seconds
-    #     job_info['date_applied'] = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-    # else:
-    #     job_info['date_applied'] = 'Unknown'
+#     job_info['Organization'] = organization
 
-    # job_info['status'] = classify_email_status(email_data['body'])
+#     if 'internalDate' in email_data:
+#         timestamp = int(email_data['internalDate']) / 1000  # Convert milliseconds to seconds
+#         job_info['Date applied'] = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+#     else:
+#         job_info['Date applied'] = 'Unknown'
 
-    # return job_info
+    
+#     job_info['Status'] = classify_email_status(email_data['body'])
+#     return job_info
 
-'''def classify_and_extract_openai(email_data):
+def classify_and_extract_email_informartion(email_data):
     email_body = email_data['body']
     
     # Convert internalDate to a readable format if provided
@@ -242,13 +196,12 @@ def extract_job_info(email_data):
     completion = client.chat.completions.create(
         model="gpt-3.5-turbo",  # Use "gpt-4" if available; otherwise, use "gpt-3.5-turbo" or another model
         messages=messages,
-        max_tokens=200,
-        temperature=0
     )
 
     # Extract and return the JSON result from the model's response
     result = completion.choices[0].message['content'].strip()
-    return result'''
+    print(result)
+    return result
 
 
 def process_emails():
@@ -258,7 +211,7 @@ def process_emails():
 
 
     for email_data in job_emails:
-       job_info =  extract_job_info(email_data)
+       job_info =  classify_and_extract_email_informartion(email_data)
        add_job_to_sheet(job_info)
 
 
