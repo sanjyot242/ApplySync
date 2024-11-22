@@ -1,3 +1,4 @@
 celery -A celery_app worker --pool=solo --loglevel=info
 
 celery -A celery_app beat --loglevel=info
+
