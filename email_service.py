@@ -10,50 +10,65 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import json
+from pymongo import MongoClient
 
 load_dotenv()
 client = OpenAI(
-    api_key = os.getenv("OPENAI_KEY")
+    api_key = os.getenv("OPENAIKEY")
 )
-
-
-
-
-
-
-
 
 
 CLIENT_SECRET_FILE = os.getenv('OAUTH_CLIENT_SECRET_FILE')
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/spreadsheets' , 'https://www.googleapis.com/auth/drive']
 
+MONGODB_URI = os.getenv('MONGO_URI')
+client = MongoClient("MONGODB_URI")
+db = client["job_tracker"]
+token_collection = db["user_token"]
 
 
-
-
-
-def authenticate_user():
+def authenticate_google_user(user_email):
+    # Check if the token exists in MongoDB
+    token_data = get_token(user_email, provider="google")  # Fetch token for this user and provider
     creds = None
-    token_file = 'token.json'
 
-    # Check if token.json exists and load the token
-    if os.path.exists(token_file):
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-    
-    # If no valid token is available, request user to log in
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    if token_data:
+        # Convert the stored token data to Google Credentials
+        creds = Credentials.from_authorized_user_info(token_data["token"])
+
+    # Refresh the token if it's expired
+    if creds and creds.expired and creds.refresh_token:
+        try:
             creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-            creds = flow.run_local_server(port=5001)
-        
-        # Save the credentials for future use
-        with open(token_file, 'w') as token:
-            token.write(creds.to_json())
+            # Save the refreshed token back to MongoDB
+            save_token(user_email, json.loads(creds.to_json()), provider="google")
+            print("Google token refreshed and saved to MongoDB.")
+        except Exception as e:
+            print(f"Error refreshing Google token for {user_email}: {e}")
+            creds = None
+
+    # If no valid token, initiate OAuth flow
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            os.getenv('OAUTH_CLIENT_SECRET_FILE'), 
+            scopes=[
+                'https://www.googleapis.com/auth/gmail.readonly',
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive'
+            ]
+        )
+        creds = flow.run_local_server(port=5001)
+
+        # Save the new token to MongoDB
+        save_token(user_email, json.loads(creds.to_json()), provider="google")
+        print("Google token saved to MongoDB.")
     
     service = build('gmail', 'v1', credentials=creds)
     return service
+
+
+
+
 
 
 
@@ -205,13 +220,43 @@ def classify_and_extract_email_informartion(email_data):
     )
 
     # Extract and return the JSON result from the model's response
-    result = json.loads(completion.choices[0].message.content or "{}")
+    if completion.choices and len(completion.choices) > 0 and completion.choices[0].message.content:
+        content = completion.choices[0].message.content
+    else:
+        content = "{}"  # Default to an empty JSON object if no valid response is found
+
+    try:
+        result = json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"JSON parsing error: {e}")
+        result = {}  # Default to an empty dictionary if parsing fails
+
     print(result)
     return result
 
+def save_token(user_email,token_data,provider):
+    try:
+        token_document = {
+            "email": user_email,
+            "token": token_data,
+            "provider": provider
+        }
+        token_collection.update_one({"email":user_email, "provider": provider}, {"$set": token_document}, upsert=True)
+        print(f"Token saved successfully for {user_email}")
+    except Exception as e:
+        print(f"An error occurred while saving token: {str(e)}")
+
+
+def get_token(user_email, provider):
+    try:
+        return token_collection.find_one({"email": user_email, "provider": provider})
+    except Exception as e:
+        print(f"An error occurred while fetching token: {str(e)}")
+        return None
+
 
 def process_emails():
-    service = authenticate_user()
+    service = authenticate_google_user("sanjyot.satvi242@gmail.com")
 
     job_emails = fetch_job_details(service)
 
