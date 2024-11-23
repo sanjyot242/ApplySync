@@ -22,7 +22,7 @@ CLIENT_SECRET_FILE = os.getenv('OAUTH_CLIENT_SECRET_FILE')
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/spreadsheets' , 'https://www.googleapis.com/auth/drive']
 
 MONGODB_URI = os.getenv('MONGO_URI')
-client = MongoClient("MONGODB_URI")
+client = MongoClient(MONGODB_URI)
 db = client["job_tracker"]
 token_collection = db["user_token"]
 
